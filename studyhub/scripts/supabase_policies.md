@@ -1,0 +1,6 @@
+- Enable Google provider in Supabase Auth Providers.
+  - Add OAuth credentials and callback URL: your Netlify URL (production) and http://localhost:8888 (Netlify dev) or http://localhost:5173 for Vite dev.
+  - Scopes: `openid email profile https://www.googleapis.com/auth/calendar`.
+- Set Site URL in Supabase Auth settings to your Netlify domain.
+- Run `sql/schema.sql` in the SQL editor.
+- Realtime: Enable for the `public` schema and for tables `events, groups, messages`.

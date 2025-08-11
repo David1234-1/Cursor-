@@ -1,67 +1,87 @@
 import { useState } from 'react'
 import { supabase } from '../lib/supabaseClient'
+import { toast } from 'sonner'
+// @ts-ignore
 import * as pdfjsLib from 'pdfjs-dist'
 // @ts-ignore
-import pdfjsWorker from 'pdfjs-dist/build/pdf.worker.mjs?url'
+import pdfWorker from 'pdfjs-dist/build/pdf.worker.min.mjs?worker&url'
 
-(pdfjsLib as any).GlobalWorkerOptions.workerSrc = pdfjsWorker
+(pdfjsLib as any).GlobalWorkerOptions.workerSrc = pdfWorker
 
-export default function ImportPage() {
+export default function ImportPage(){
   const [files, setFiles] = useState<File[]>([])
-  const [status, setStatus] = useState<string>('')
+  const [busy, setBusy] = useState(false)
 
-  const onSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const selected = Array.from(e.target.files || [])
-    setFiles(selected)
+  function onPick(e: React.ChangeEvent<HTMLInputElement>){
+    const list = e.target.files ? Array.from(e.target.files) : []
+    setFiles(prev => [...prev, ...list])
   }
 
-  const extractPdfText = async (file: File) => {
-    const arrayBuffer = await file.arrayBuffer()
-    const pdf = await (pdfjsLib as any).getDocument({ data: arrayBuffer }).promise
-    let text = ''
-    for (let i = 1; i <= pdf.numPages; i++) {
-      const page = await pdf.getPage(i)
-      const content = await page.getTextContent()
-      text += content.items.map((it: any) => it.str).join(' ') + '\n'
+  async function extractText(file: File): Promise<string> {
+    if(file.type === 'text/plain'){
+      return await file.text()
     }
-    return text
+    if(file.type === 'application/pdf' || file.name.endsWith('.pdf')){
+      const data = new Uint8Array(await file.arrayBuffer())
+      const pdf = await (pdfjsLib as any).getDocument({ data }).promise
+      let text = ''
+      for(let i=1; i<=pdf.numPages; i++){
+        const page = await pdf.getPage(i)
+        const content = await page.getTextContent()
+        text += content.items.map((it:any)=> it.str).join(' ') + '\n'
+      }
+      return text
+    }
+    throw new Error('Format non supporté')
   }
 
-  const extractTxt = async (file: File) => new TextDecoder('utf-8').decode(await file.arrayBuffer())
+  async function onStart(){
+    if(files.length===0){ toast.info('Ajoutez des fichiers'); return }
+    setBusy(true)
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      if(!user) throw new Error('Non connecté')
 
-  const handleImport = async () => {
-    setStatus('Extraction...')
-    for (const file of files) {
-      let content = ''
-      if (file.name.toLowerCase().endsWith('.pdf')) content = await extractPdfText(file)
-      else if (file.name.toLowerCase().endsWith('.txt')) content = await extractTxt(file)
-      else { continue }
-
-      setStatus('Analyse IA...')
-      const res = await fetch('/api/analyzeCourse', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ content }) })
-      if (!res.ok) { setStatus('Erreur d\'analyse'); return }
-      const ai = await res.json()
-
-      const { data: user } = await supabase.auth.getUser()
-      const { data: course, error } = await supabase.from('courses').insert({ user_id: user.user?.id, title: file.name, file_name: file.name, content }).select().single()
-      if (error) { setStatus('Erreur enregistrement'); return }
-
-      if (ai.qcms?.length) await supabase.from('qcms').insert(ai.qcms.map((q: any) => ({ course_id: course.id, ...q })))
-      if (ai.flashcards?.length) await supabase.from('flashcards').insert(ai.flashcards.map((f: any) => ({ course_id: course.id, ...f })))
-      if (ai.summary) await supabase.from('summaries').insert({ course_id: course.id, content: ai.summary })
-      setStatus('Import terminé ✅')
+      for(const file of files){
+        // Upload original file to storage
+        await supabase.storage.from('courses').upload(`${user.id}/${Date.now()}_${file.name}`, file, { upsert: true })
+        // Extract text
+        const content = await extractText(file)
+        // Insert course
+        const { data: course, error: courseErr } = await supabase.from('courses').insert({ user_id: user.id, title: file.name.replace(/\.[^/.]+$/, ''), file_name: file.name, content }).select('*').single()
+        if(courseErr) throw courseErr
+        // AI analysis
+        const res = await fetch('/api/generate', { method: 'POST', headers: { 'Content-Type':'application/json' }, body: JSON.stringify({ content }) })
+        if(!res.ok) throw new Error('Erreur IA')
+        const ai = await res.json()
+        // Save QCMs, flashcards, summary
+        if(ai.qcms?.length){
+          await supabase.from('qcms').insert(ai.qcms.map((q:any)=> ({ course_id: course.id, question: q.question, options: q.options, answer: q.answer })))
+        }
+        if(ai.flashcards?.length){
+          await supabase.from('flashcards').insert(ai.flashcards.map((f:any)=> ({ course_id: course.id, front: f.front, back: f.back })))
+        }
+        if(ai.summary){
+          await supabase.from('summaries').insert({ course_id: course.id, content: ai.summary })
+        }
+      }
+      toast.success('Import et analyse terminés')
+    } catch(e:any){
+      console.error(e)
+      toast.error(e.message || 'Erreur import')
+    } finally {
+      setBusy(false)
     }
   }
 
   return (
-    <div className="min-h-screen bg-[var(--bg)] text-[var(--fg)] p-4">
-      <h2 className="text-lg font-semibold mb-3">Importation de cours</h2>
-      <input type="file" accept=".pdf,.txt" multiple onChange={onSelect} className="mb-3" />
-      <button onClick={handleImport} className="rounded-xl bg-black text-white px-4 py-2">Importer</button>
-      {status && <p className="mt-3 text-sm opacity-80">{status}</p>}
-      <ul className="mt-3 space-y-1 text-sm">
-        {files.map(f => <li key={f.name} className="opacity-80">{f.name}</li>)}
-      </ul>
+    <div className="app-card p-6">
+      <div className="text-xl font-semibold mb-3">Importer des cours (.pdf, .txt)</div>
+      <input type="file" multiple accept=".pdf,.txt" onChange={onPick} />
+      <div className="mt-3 text-sm text-neutral-500">Fichiers: {files.map(f=>f.name).join(', ') || 'aucun'}</div>
+      <div className="mt-4">
+        <button className="app-button" disabled={busy} onClick={onStart}>{busy? 'Traitement…':'Lancer l\'import & IA'}</button>
+      </div>
     </div>
   )
 }

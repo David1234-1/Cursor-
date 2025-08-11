@@ -1,32 +1,25 @@
 import { Link } from 'react-router-dom'
-import { supabase } from '../lib/supabaseClient'
 
-export default function Dashboard() {
+export default function Dashboard(){
+  const cards = [
+    { to:'/calendar', title:'Calendrier', emoji:'📅', desc:'Planifiez vos révisions' },
+    { to:'/import', title:'Import de cours', emoji:'📂', desc:'PDF/TXT, OCR et audio' },
+    { to:'/qcm', title:'QCM', emoji:'📝', desc:'Générez et révisez' },
+    { to:'/flashcards', title:'Flashcards', emoji:'🎯', desc:'Spaced repetition' },
+    { to:'/summaries', title:'Résumés', emoji:'📜', desc:'IA résume vos cours' },
+    { to:'/groups', title:'Groupes & Chat', emoji:'👥', desc:'Travaillez ensemble' },
+    { to:'/exam', title:'Examen', emoji:'⏱️', desc:'Mode test chronométré' },
+    { to:'/settings', title:'Réglages', emoji:'⚙️', desc:'Profil, 2FA, thèmes' },
+  ]
   return (
-    <div className="min-h-screen bg-[var(--bg)] text-[var(--fg)]">
-      <header className="p-4 flex items-center justify-between">
-        <h1 className="text-xl font-semibold">StudyHub</h1>
-        <button className="text-sm opacity-70 hover:opacity-100" onClick={() => supabase.auth.signOut()}>Se déconnecter</button>
-      </header>
-      <main className="px-4 pb-12">
-        <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
-          <Tile to="/calendar" title="Calendrier" emoji="📅" />
-          <Tile to="/import" title="Importation" emoji="📂" />
-          <Tile to="/exam" title="Mode examen" emoji="⏱️" />
-          <Tile to="/stats" title="Statistiques" emoji="📊" />
-          <Tile to="/groups" title="Groupes & Chat" emoji="👥" />
-          <Tile to="/settings" title="Réglages" emoji="⚙️" />
-        </div>
-      </main>
+    <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+      {cards.map(c=> (
+        <Link key={c.to} to={c.to} className="app-card p-5 hover:shadow-lg transition">
+          <div className="text-3xl">{c.emoji}</div>
+          <div className="mt-3 text-xl font-semibold">{c.title}</div>
+          <div className="text-neutral-500">{c.desc}</div>
+        </Link>
+      ))}
     </div>
-  )
-}
-
-function Tile({ to, title, emoji }: { to: string, title: string, emoji: string }) {
-  return (
-    <Link to={to} className="rounded-2xl p-6 bg-[var(--card)] border border-[var(--border)] shadow hover:shadow-lg transition block">
-      <div className="text-3xl mb-3">{emoji}</div>
-      <div className="text-lg font-medium">{title}</div>
-    </Link>
   )
 }

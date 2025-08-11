@@ -1,0 +1,2 @@
+-- Create a default group for each user on signup (run manually or via trigger)
+-- insert into public.groups (name, owner_id) values ('Mon Groupe', 'REPLACE_WITH_USER_ID');

@@ -1,65 +1,61 @@
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '../lib/supabaseClient'
 
-export default function ExamPage() {
+export default function ExamPage(){
   const [qcms, setQcms] = useState<any[]>([])
-  const [answers, setAnswers] = useState<Record<string, number>>({})
-  const [seconds, setSeconds] = useState(20 * 60)
+  const [idx, setIdx] = useState(0)
+  const [selected, setSelected] = useState<number|null>(null)
+  const [score, setScore] = useState(0)
+  const [seconds, setSeconds] = useState(60*10)
   const [done, setDone] = useState(false)
 
-  useEffect(() => {
-    supabase.from('qcms').select('*').limit(30).then(({ data }) => setQcms(data || []))
-  }, [])
+  useEffect(()=>{ load() },[])
+  async function load(){
+    const { data } = await supabase.from('qcms').select('*').limit(20)
+    setQcms(data || [])
+  }
 
-  useEffect(() => {
-    if (done) return
-    const id = setInterval(() => setSeconds(s => s - 1), 1000)
-    return () => clearInterval(id)
+  useEffect(()=>{
+    if(done) return
+    const id = setInterval(()=> setSeconds(s=> s>0 ? s-1 : 0), 1000)
+    return ()=> clearInterval(id)
   }, [done])
 
-  useEffect(() => {
-    if (seconds <= 0) setDone(true)
-  }, [seconds])
+  useEffect(()=>{ if(seconds===0) setDone(true) }, [seconds])
 
-  const score = useMemo(() => qcms.reduce((acc, q) => acc + ((answers[q.id] ?? -1) === q.answer ? 1 : 0), 0), [answers, qcms])
+  function answer(i: number){
+    if(selected!==null) return
+    setSelected(i)
+    if(i===qcms[idx].answer) setScore(s=>s+1)
+  }
+  function next(){ if(idx+1<qcms.length){ setIdx(i=>i+1); setSelected(null) } else setDone(true) }
+
+  if(done) return (
+    <div className="max-w-xl mx-auto app-card p-6 text-center">
+      <div className="text-2xl font-semibold">Résultat</div>
+      <div className="mt-2 text-neutral-500">{score} / {qcms.length}</div>
+    </div>
+  )
+
+  if(qcms.length===0) return <div className="p-4">Chargement…</div>
+
+  const q = qcms[idx]
+  const mm = Math.floor(seconds/60).toString().padStart(2,'0')
+  const ss = (seconds%60).toString().padStart(2,'0')
 
   return (
-    <div className="min-h-screen bg-[var(--bg)] text-[var(--fg)] p-4">
-      <div className="flex items-center justify-between mb-3">
-        <h2 className="text-lg font-semibold">Mode Examen</h2>
-        <div className="font-mono">{Math.max(0, Math.floor(seconds/60)).toString().padStart(2,'0')}:{Math.max(0, seconds%60).toString().padStart(2,'0')}</div>
+    <div className="max-w-2xl mx-auto app-card p-6">
+      <div className="flex items-center justify-between mb-2">
+        <div className="text-sm text-neutral-500">Question {idx+1}/{qcms.length}</div>
+        <div className="text-lg font-mono">{mm}:{ss}</div>
       </div>
-      {!done ? (
-        <div className="space-y-4">
-          {qcms.map((q, idx) => (
-            <div key={q.id} className="rounded-2xl border p-4 bg-[var(--card)] border-[var(--border)]">
-              <div className="font-medium mb-2">{idx+1}. {q.question}</div>
-              <div className="grid gap-2">
-                {q.options?.map((opt: string, i: number) => (
-                  <label key={i} className="flex items-center gap-2">
-                    <input type="radio" name={q.id} checked={(answers[q.id] ?? -1) === i} onChange={() => setAnswers(a => ({ ...a, [q.id]: i }))} />
-                    <span>{opt}</span>
-                  </label>
-                ))}
-              </div>
-            </div>
-          ))}
-          <button onClick={() => setDone(true)} className="rounded-xl bg-black text-white px-4 py-2">Terminer</button>
-        </div>
-      ) : (
-        <div className="rounded-2xl border p-6 bg-[var(--card)] border-[var(--border)]">
-          <div className="text-xl font-semibold mb-2">Score: {score} / {qcms.length}</div>
-          <div className="space-y-2">
-            {qcms.map((q) => (
-              <div key={q.id} className="text-sm">
-                <div className="font-medium">{q.question}</div>
-                <div>Votre réponse: {q.options?.[answers[q.id] ?? -1] ?? '—'}</div>
-                <div>Bonne réponse: {q.options?.[q.answer]}</div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
+      <div className="text-lg font-semibold mb-3">{q.question}</div>
+      <div className="space-y-2">
+        {q.options.map((o:string, i:number)=> (
+          <button key={i} onClick={()=>answer(i)} className={`w-full text-left px-4 py-3 rounded-xl border ${selected!==null && i===q.answer ? 'border-green-500 bg-green-50/70 dark:bg-green-900/30' : ''} ${selected!==null && i===selected && i!==q.answer ? 'border-red-500 bg-red-50/70 dark:bg-red-900/30':''}`}>{o}</button>
+        ))}
+      </div>
+      <div className="mt-4 flex justify-end"><button className="app-button" onClick={next}>Suivant</button></div>
     </div>
   )
 }

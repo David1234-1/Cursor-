@@ -1,0 +1,1 @@
+declare module '@netlify/functions' { export interface Handler { (event:any, context:any): any } }
